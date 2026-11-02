@@ -10,6 +10,7 @@
  *   node device-sim.js --dose              演示一次服药：开盖 → 盖上取药 → 上报事件
  *   node device-sim.js --dose --plan=19:00 指定这次对应的计划时间
  *   node device-sim.js --dose --seq=4 --taken=2   指定事件序号和今日已完成次数
+ *   node device-sim.js --seed              造一组自洽的演示数据（3 条记录，答辩用）
  *
  * 说明：
  *   同一个设备只能有一个连接，所以启动它之后 MQTT.fx 会掉线，这是正常的。
@@ -145,16 +146,74 @@ function judgeStatus(planTime, actualTime) {
   return 'ontime';
 }
 
+/** 读 `--key=值` 形式的命令行参数 */
+function argOf(k, def) {
+  const hit = process.argv.find((a) => a.startsWith('--' + k + '='));
+  return hit ? hit.split('=')[1] : def;
+}
+
+/**
+ * 秤盘原始码值。物模型 weight_g 现在装的是未标定的 ADC 原始码值，
+ * 所以虚拟设备也要报同一量级（几十万），否则演示画面和真机对不上。
+ * --base= 改基准码值，--drop= 改一次服药的码值下降量（真机以 A 实测的 D 为准）。
+ */
+const RAW_BASE = Number(argOf('base', '523841'));
+
+/** 一次服药的码值下降量（演示值，真机由 A 实测） */
+const RAW_DROP = Number(argOf('drop', '300'));
+
+/**
+ * --seed 演示：按当天计划造 3 条自洽记录
+ *
+ * 每条间隔 12 秒上报，因为服务端是 10 秒轮询影子归档的，一条条发才能逐条入档
+ * （一次全发完的话，轮询只能看到最后一个状态，前面两条会丢）。
+ * 计划 08:26 / 12:26 / 17:26，实际时间都落在 ±10 分钟内 → 全部 ontime，
+ * 首页 3/3、记录页 3 条按时、零漏服。
+ */
+function runSeed(sock) {
+  const items = [
+    { seq: 1, plan: '08:26', actual: '08:24' },
+    { seq: 2, plan: '12:26', actual: '12:31' },
+    { seq: 3, plan: '17:26', actual: '17:28' }
+  ];
+  const GAP = 12000;
+
+  items.forEach((it, i) => {
+    setTimeout(() => {
+      const status = judgeStatus(it.plan, it.actual);
+      reportProps(sock, {
+        state: 'idle',
+        lid_open: false,
+        weight_g: RAW_BASE - RAW_DROP * (i + 1),
+        taken_today: it.seq,
+        total_today: items.length,
+        event_seq: it.seq,
+        event_drug_name: '二甲双胍',
+        event_dose: '2片',
+        event_plan_time: it.plan,
+        event_actual_time: it.actual,
+        event_status: status
+      });
+      console.log(
+        `  [seed ${it.seq}/${items.length}] ${it.plan} → ${it.actual}  ${status}` +
+          `  码值 ${RAW_BASE - RAW_DROP * (i + 1)}  进度 ${it.seq}/${items.length}`
+      );
+    }, 1500 + i * GAP);
+  });
+
+  setTimeout(() => {
+    console.log('  [seed] 完成：3 条记录已上报，去小程序下拉刷新看首页和记录页');
+  }, 1500 + items.length * GAP);
+}
+
 /** --dose 演示：开盖 → 盖上并取走药 → 上报一条服药事件 */
 function runDoseDemo(sock) {
-  const argOf = (k, def) => {
-    const hit = process.argv.find((a) => a.startsWith('--' + k + '='));
-    return hit ? hit.split('=')[1] : def;
-  };
   const planTime = argOf('plan', '17:26');
   const seq = Number(argOf('seq', '3'));
   const taken = Number(argOf('taken', '1'));
   const forceStatus = argOf('status', '');
+  // 2 片药的码值当量，真机由 A 实测（见对接文档第 3 节），这里取个演示值
+  const drop = RAW_DROP;
   const pad = (n) => String(n).padStart(2, '0');
   const nowHM = () => {
     const d = new Date();
@@ -168,13 +227,13 @@ function runDoseDemo(sock) {
   }, 3000);
 
   setTimeout(() => {
-    console.log('  [演示 2/2] 盖上盒盖，取走药（128.5g → 127.5g，降 1.0g）');
+    console.log(`  [演示 2/2] 盖上盒盖，取走药（码值 ${RAW_BASE} → ${RAW_BASE - drop}，降 ${drop}）`);
     const actual = nowHM();
     const status = forceStatus || judgeStatus(planTime, actual);
     reportProps(sock, {
       lid_open: false,
       state: 'idle',
-      weight_g: 127.5,
+      weight_g: RAW_BASE - drop,
       taken_today: taken,
       total_today: 3,
       event_seq: seq,
@@ -192,6 +251,7 @@ function runDoseDemo(sock) {
 // ---------- 主流程 ----------
 const wantReport = process.argv.includes('--report');
 const wantDose = process.argv.includes('--dose');
+const wantSeed = process.argv.includes('--seed');
 let sock;
 let keepTimer;
 
@@ -254,14 +314,15 @@ function start() {
             reportProps(sock, {
               state: 'idle',
               next_time: '19:00',
-              weight_g: 128.5,
+              weight_g: RAW_BASE,
               lid_open: false,
               taken_today: takenArg ? Number(takenArg.split('=')[1]) : 0,
               total_today: 3
             });
           }
           keepTimer = setInterval(() => sock.write(Buffer.from([0xc0, 0x00])), 30000);
-          if (wantDose) runDoseDemo(sock);
+          if (wantSeed) runSeed(sock);
+          else if (wantDose) runDoseDemo(sock);
         } else {
           console.log(`  × 连接被拒，返回码 ${rc}`);
           console.log('    1=协议版本不对 4=用户名密码错 5=未授权（密码多半过期）');

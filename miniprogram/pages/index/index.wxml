@@ -21,8 +21,8 @@
 
   <view class="row">
     <view class="card">
-      <text class="card-label">盒内药量</text>
-      <text class="card-value">{{props.weight_g || 0}}<text class="unit"> g</text></text>
+      <text class="card-label">秤盘读数（原始值）</text>
+      <text class="card-value">{{weightText}}</text>
     </view>
     <view class="card">
       <text class="card-label">每次用量</text>

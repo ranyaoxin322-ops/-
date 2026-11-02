@@ -63,7 +63,7 @@ $oc/devices/6ae6fbd37f2e6c302fa9050f_pillbox_01/sys/properties/report
     "properties": {
       "state": "idle",
       "next_time": "12:30",
-      "weight_g": 128.5,
+      "weight_g": 523841,
       "lid_open": false,
       "taken_today": 1,
       "total_today": 3
@@ -119,28 +119,55 @@ $oc/devices/6ae6fbd37f2e6c302fa9050f_pillbox_01/sys/properties/report
 硬件只有两个传感器：
 
 - **磁簧开关**：只知道盒盖开 / 关（`lid_open`）
-- **HX711 + 1KG 称重**：只知道托盘总重量（`weight_g`），实际精度约 0.3g
+- **HX711 + 1KG 称重**：只输出 **24 位 ADC 原始码值**（装在 `weight_g` 字段里），
+  **没有换算成克**——它只是一个随重量单调变化的整数，量级通常在几十万到几百万
 
-**没有任何一个传感器能直接告诉你"他吃了没有"。** 所以一次服药必须靠「开盖 + 掉重量」两个条件一起判。
+> ⚠️ 字段名虽然叫 `weight_g`，但里面装的**不是克数**。固件不做标定、也不打算做，
+> 所以下面所有判定都不能用"下降 0.3 克"这种说法，只能比**码值掉了多少**。
+> 单位列已经清空，物模型描述写的是"称重模块原始码值（24位ADC，未标定，非克数）"。
+
+**没有任何一个传感器能直接告诉你"他吃了没有"。** 所以一次服药必须靠「开盖 + 码值下降」两个条件一起判。
 
 ### 要维护的变量
 
 | 变量 | 含义 |
 |---|---|
-| `base_weight` | 基准重量（克），存在 Flash 里，断电不丢 |
+| `base_code` | 基准**码值**（原始值，不是克），存在 Flash 里，断电不丢 |
 | `taken_today` | 今日已完成次数 |
 | `event_seq` | 事件序号，每次服药 +1 |
 
+### 判定阈值怎么定（动手前先自己测一次）
+
+比的是"码值掉了多少"，所以必须先知道**两片药值多少码值**：
+
+1. 空盘（不放药盒）读一个值 `c0`
+2. 把 2 片药放进托盘，读一个值 `c2`（垫个已知容器也行，只要两次称的是同一样东西）
+3. `D = |c2 - c0|` —— 这就是「2 片药的码值当量」
+
+阈值取 `TH = D × 0.5`（约等于 1 片）：
+
+| 动作 | 码值变化 | 是否触发 |
+|---|---|---|
+| 拿走 2 片 | 掉 `D` | ✅ 触发（`D > TH`） |
+| 拿走 1 片 | 掉 `0.5D` | ✅ 刚好在阈值上 |
+| 开盖看一眼 | 掉 0 附近 | ❌ 不触发 |
+| 手碰一下托盘 | 抖动几十~几千 | ❌ 不触发（远小于 `TH`） |
+
+如果空载读数不稳（上下跳超过 `D × 0.2`），把 `TH` 提到 **`噪声 × 3`** 和 **`D × 0.5`** 里更大的那个。
+
+> 两个数（`D` 和空载跳动幅度）测出来发我，我帮你核阈值合不合理。
+> 如果连 `D` 都测不出来（拿走 2 片读数几乎不变），那是传感器量程/接线问题，先修硬件，改代码没用。
+
 ### 判定流程
 
-1. **开机时**（盒盖是关的）→ `base_weight = 当前 weight_g`，上报一次属性
+1. **开机时**（盒盖是关的）→ `base_code = 当前 weight_g`，上报一次属性
 2. **`lid_open` 由 false → true**（开盖）→ 上报 `lid_open:true, state:"opened"`
 3. **`lid_open` 由 true → false**（关盖）→ 等 1~2 秒读数稳定后判断：
-   - `base_weight - weight_g >= 0.3` → **算一次服药**
+   - `base_code - weight_g >= TH` → **算一次服药**
      - `taken_today += 1`，`event_seq += 1`
      - 上报完整事件组（见第 2 节的 `event_*` 字段）
-   - 差值 < 0.3 → **不算**（只是开盖看一眼）
-   - **无论算不算，关盖后都执行 `base_weight = weight_g`**，下次从新基准开始比
+   - 差值 < `TH` → **不算**（只是开盖看一眼）
+   - **无论算不算，关盖后都执行 `base_code = weight_g`**，下次从新基准开始比
 4. 每次上报都带上 `taken_today` `total_today` `weight_g` `lid_open` `state`
 
 ### 为什么必须"关盖才判"
@@ -154,7 +181,7 @@ $oc/devices/6ae6fbd37f2e6c302fa9050f_pillbox_01/sys/properties/report
 
 1. **上电后等 1~2 秒再取基准**。HX711 上电有零点漂移，刚上电的读数是错的。基准一偏，后面全错。
 2. **读数取平均**。连读 10 次求平均再判断，单次读数会被震动干扰。
-3. **`base_weight` 必须存 Flash/EEPROM**。断电重启后丢了，基准就归零，全部判错。
+3. **`base_code` 必须存 Flash/EEPROM**。断电重启后丢了，基准就归零，全部判错。
 
 ### 断网怎么办
 
@@ -165,8 +192,9 @@ $oc/devices/6ae6fbd37f2e6c302fa9050f_pillbox_01/sys/properties/report
 | 现象 | 原因 |
 |---|---|
 | 小程序首页数字一直不动 | 只上报了 `weight_g`，忘了上报 `taken_today` |
-| 开盖看一眼就 +1 | 少了"重量必须下降 ≥0.3g"这个条件 |
-| 一天只有第一次算得对 | 关盖后没更新 `base_weight`，一直拿最早那个基准在比 |
+| 开盖看一眼就 +1 | 少了"码值必须下降 ≥ `TH`"这个条件 |
+| 一天只有第一次算得对 | 关盖后没更新 `base_code`，一直拿最早那个基准在比 |
+| 拿走药了但没记上 | `TH` 定得太大（按克数拍脑袋填的），实际码值差没到阈值 |
 
 ---
 
@@ -219,7 +247,7 @@ Topic: $oc/devices/6ae6fbd37f2e6c302fa9050f_pillbox_01/sys/commands/response/req
 
 | 参数 | 类型 | 必选 | 说明 |
 |---|---|---|---|
-| `base_g` | decimal | 否 | 直接指定基准重量；不传就现场称一次当前重量当基准 |
+| `base_g` | decimal | 否 | 直接指定**基准码值**（和 `weight_g` 同一套原始值，不是克）；不传就现场读一次当前码值当基准 |
 
 ```json
 {"result_code": 0, "response_name": "tare_response", "paras": {"result": 0}}
@@ -233,7 +261,7 @@ Topic: $oc/devices/6ae6fbd37f2e6c302fa9050f_pillbox_01/sys/commands/response/req
 |---|---|---|---|
 | `state` | string | 上报 | `idle` / `reminder` / `opened`（**注意是 reminder，不是 reminding**，多一个 i 平台就拒收） |
 | `next_time` | string | 上报 | 下一次提醒，`HH:MM`（⚠️ 见下方「属性名核对」） |
-| `weight_g` | decimal | 上报 | 秤盘总重（含药盒），克，保留 1~2 位小数 |
+| `weight_g` | decimal | 上报 | **称重模块原始 ADC 码值**（24 位，未标定，**不是克数**）。范围 `-1000000~1000000`，**超出会被平台整条拒收**，连 `lid_open`/`event_seq` 一起丢 |
 | `lid_open` | boolean | 上报 | 盒盖是否打开 |
 | `taken_today` | int | 上报 | 今日已完成次数，取值 **0~10**（物模型上限就是 10，超了整条报文会被拒） |
 | `total_today` | int | 上报 | 今日计划次数，取值 **0~10** |
@@ -246,7 +274,7 @@ Topic: $oc/devices/6ae6fbd37f2e6c302fa9050f_pillbox_01/sys/commands/response/req
 | `drug_name` | string | 下发 | 药品名称 |
 | `dose` | string | 下发 | 每次用量 |
 | `times` | string | 下发 | 逗号分隔的时间点 |
-| `base_g` | decimal | 下发 | `tare` 命令的参数，去皮基准重量（选填） |
+| `base_g` | decimal | 下发 | `tare` 命令的参数，去皮**基准码值**（选填） |
 | `result` | int | 回执 | 0 = 成功 |
 
 ### 属性名核对（务必先对一遍）
@@ -256,6 +284,8 @@ Topic: $oc/devices/6ae6fbd37f2e6c302fa9050f_pillbox_01/sys/commands/response/req
 把属性列表和上表**逐字**对一遍。
 
 > 2026-11-02 已核对通过：现网 12 个属性和上表完全一致（`next_time` 是下划线，`state` 枚举是 `idle/reminder/opened`）。
+> 同日变更：`weight_g` 与 `tare.base_g` 已从「克」改为「原始码值」，范围 `-1000000~1000000`、步长 0.1、**单位留空**，
+> 描述同步改为「称重模块原始码值（24位ADC，未标定，非克数）」。**看到"克"字就是旧文档**。
 > 下面这张表是两个曾经踩过的坑，留着给后面接手的人对答案：
 
 | 表里写的 | 曾经控制台里是 | 处理方式 |

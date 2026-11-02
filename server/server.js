@@ -91,6 +91,31 @@ function archiveEvent(props, eventTime) {
   console.log(`[归档] 新增服药记录 seq=${seq} ${props.event_plan_time}→${props.event_actual_time}`);
 }
 
+/**
+ * 称重原始码值 → 克（可选，默认关闭）
+ *
+ * 现状（2026-11-02）：A 只输出 24 位 ADC 原始码值，固件不做标定，也拿不到可用的
+ * 换算系数。所以整套系统按**原始码值**运行：物模型 weight_g 单位已清空、范围放宽到
+ * ±1000000，小程序显示「秤盘读数（原始值）」，服药判定比的是码值差而不是克数。
+ *
+ * 这段只是留个口子：万一以后能标定，把系数填进 config.js 就切回克，页面不用改
+ * （formatWeight 会自动按带小数的克数显示）。
+ *   克 = (原始码值 - 零点) * K
+ * K <= 0（默认）时完全跳过，weight_g 原样透传。
+ */
+function convertWeight(props) {
+  const k = Number((config.RAW_WEIGHT_K || 0));
+  if (!(k > 0)) return props;
+  const raw = Number(props.weight_g);
+  if (!isFinite(raw)) return props;
+  const zero = Number(config.RAW_WEIGHT_ZERO || 0);
+  const grams = Math.max(0, Math.round((raw - zero) * k * 100) / 100);
+  return Object.assign({}, props, {
+    weight_g: grams,
+    weight_raw: raw
+  });
+}
+
 async function handleStatus() {
   const propsRes = await huawei.getProperties();
   const props = propsRes.properties || {};
@@ -108,7 +133,7 @@ async function handleStatus() {
   return {
     ok: true,
     online,
-    properties: props,
+    properties: convertWeight(props),
     eventTime: propsRes.eventTime,
     plan: readJson(PLAN_FILE, null),
     records: readJson(RECORD_FILE, [])

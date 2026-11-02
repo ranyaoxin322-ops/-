@@ -62,6 +62,21 @@ function formatEventTime(t) {
   return pad(d.getHours()) + ':' + pad(d.getMinutes());
 }
 
+/**
+ * 秤盘读数展示。
+ * weight_g 现在装的是称重模块的原始 ADC 码值，固件不做标定、服务端也拿不到
+ * 换算系数，所以它不是一个克数，页面上不能再拼 " g"。
+ * 整数原样显示；万一以后在服务端配上了 RAW_WEIGHT_K，返回的会是带两位小数的
+ * 克数，这时保留 1 位小数，页面不用再改。
+ */
+function formatWeight(v) {
+  // 注意 Number(null) === 0，不先挡掉会把「设备没报过」显示成 0
+  if (v === null || v === undefined || v === '') return '--';
+  const n = Number(v);
+  if (!isFinite(n)) return '--';
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
 /** 两个时间是否是本地同一天 */
 function isSameLocalDay(a, b) {
   return (
@@ -87,6 +102,7 @@ Page({
     nextRemind: '--:--',
     nextRemindHint: '',
     dataTimeText: '',
+    weightText: '--',
     missedTimes: [],
     missedText: ''
   },
@@ -158,6 +174,7 @@ Page({
           nextRemind: next.text,
           nextRemindHint: next.hint,
           dataTimeText: formatEventTime(res.eventTime),
+          weightText: formatWeight(props.weight_g),
           missedTimes: missed,
           missedText,
           planText: times.length

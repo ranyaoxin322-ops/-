@@ -131,7 +131,7 @@ node device-sim.js --report --dose --taken=1       # 再模拟一次"服药完�
 
 ```json
 {"services":[{"service_id":"PillBox","properties":{
-  "state":"idle","next_time":"19:00","weight_g":128.5,
+  "state":"idle","next_time":"19:00","weight_g":523841,
   "lid_open":false,"taken_today":1,"total_today":3}}]}
 ```
 
@@ -176,7 +176,7 @@ node device-sim.js --report --dose --taken=1       # 再模拟一次"服药完�
 
 ## 漏服是怎么判的
 
-设备只在**真的吃药**时上报事件（开盖 + 重量下降 ≥ 0.3g），没吃的时候它什么都不发，
+设备只在**真的吃药**时上报事件（开盖 + 码值下降超过阈值，阈值按药片实测，见对接文档第 3 节），没吃的时候它什么都不发，
 所以「漏服」拿不到设备数据，只能由前端按计划推算：
 
 > 计划里某个时间点已经过去 **30 分钟**，且当天没有 `plan_time` 与之对应的服药记录 → 判为漏服
