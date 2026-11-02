@@ -123,6 +123,28 @@ function reportProps(sock, props) {
   console.log(`  [上报] ${JSON.stringify(props)}`);
 }
 
+/**
+ * 按「计划时间 vs 实际时间」判定服药状态，规则与对接文档一致：
+ *   超出 120 分钟 → missed（这段就是漏服）
+ *   迟到 10 分钟以上 → late
+ *   早于 10 分钟以上 → early
+ *   其余算 ontime
+ * 原来这里只有 early/ontime 两分支、且用字符串比大小，
+ * 结果「计划 12:26、实际 17:50」也会报 ontime，记录页看着像 bug。
+ */
+function judgeStatus(planTime, actualTime) {
+  const toMin = (s) => {
+    const p = String(s || '').split(':');
+    return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0);
+  };
+  let d = toMin(actualTime) - toMin(planTime);
+  if (d < -720) d += 1440; // 跨零点：23:50 计划、00:10 实际，算迟到而非提前
+  if (d > 120) return 'missed';
+  if (d > 10) return 'late';
+  if (d < -10) return 'early';
+  return 'ontime';
+}
+
 /** --dose 演示：开盖 → 盖上并取走药 → 上报一条服药事件 */
 function runDoseDemo(sock) {
   const argOf = (k, def) => {
@@ -132,6 +154,7 @@ function runDoseDemo(sock) {
   const planTime = argOf('plan', '17:26');
   const seq = Number(argOf('seq', '3'));
   const taken = Number(argOf('taken', '1'));
+  const forceStatus = argOf('status', '');
   const pad = (n) => String(n).padStart(2, '0');
   const nowHM = () => {
     const d = new Date();
@@ -146,6 +169,8 @@ function runDoseDemo(sock) {
 
   setTimeout(() => {
     console.log('  [演示 2/2] 盖上盒盖，取走药（128.5g → 127.5g，降 1.0g）');
+    const actual = nowHM();
+    const status = forceStatus || judgeStatus(planTime, actual);
     reportProps(sock, {
       lid_open: false,
       state: 'idle',
@@ -156,9 +181,10 @@ function runDoseDemo(sock) {
       event_drug_name: '二甲双胍',
       event_dose: '2片',
       event_plan_time: planTime,
-      event_actual_time: nowHM(),
-      event_status: nowHM() < planTime ? 'early' : 'ontime'
+      event_actual_time: actual,
+      event_status: status
     });
+    console.log(`  [演示] 计划 ${planTime} → 实际 ${actual}，判定 ${status}`);
     console.log('  [演示] 完成，去小程序首页下拉刷新 → 记录页看新条目');
   }, 6500);
 }

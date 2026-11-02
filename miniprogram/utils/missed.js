@@ -48,17 +48,21 @@ function findMissed(times, records, now) {
 
   // 今天已经有记录的时段，不管状态是什么（含设备自己报的 missed）都不再重复推算，
   // 否则同一次漏服会在记录页出现两条。
+  //
+  // 这里用「分钟数」而不是原始字符串做键：设备固件上报的 event_plan_time
+  // 可能是 "8:26"，而计划里存的是 "08:26"，按字符串比会匹配不上，
+  // 已经吃过的时段就会被误判成漏服。
   const known = {};
   (records || []).forEach((r) => {
     if (!r || r.date !== today) return;
-    const t = String(r.plan_time || '');
-    if (t) known[t] = true;
+    const m = toMinutes(r.plan_time);
+    if (m >= 0) known[m] = true;
   });
 
   return (times || [])
     .filter((t) => toMinutes(t) >= 0)
     .filter((t) => cur >= toMinutes(t) + GRACE_MIN)
-    .filter((t) => !known[t])
+    .filter((t) => !known[toMinutes(t)])
     .sort((a, b) => toMinutes(a) - toMinutes(b));
 }
 

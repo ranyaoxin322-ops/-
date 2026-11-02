@@ -115,19 +115,38 @@ async function handleStatus() {
   };
 }
 
+/**
+ * 校验 HH:MM 是否真实存在
+ * 只写 /^\d{1,2}:\d{2}$/ 会放过 25:99、99:99 这种格式对但时间不存在的东西，
+ * 它们会被原样下发给设备，固件解析不了只能瞎猜。
+ */
+function isValidHM(t) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || ''));
+  if (!m) return false;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  return h >= 0 && h <= 23 && min >= 0 && min <= 59;
+}
+
+/** 8:26 → 08:26。不补零的话字符串排序会把 "8:26" 排到 "12:26" 后面 */
+function normalizeHM(t) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || '').trim());
+  return m ? `${String(Number(m[1])).padStart(2, '0')}:${m[2]}` : String(t || '').trim();
+}
+
 async function handleSavePlan(body) {
   const drug_name = String(body.drug_name || '').trim();
   const dose = String(body.dose || '').trim();
-  // 去重 + 排序：重复时间点会让首页分母虚高，也会让设备端多次提醒同一次
-  const times = Array.from(new Set((body.times || []).map((t) => String(t || '').trim())))
+  // 去重 + 规范化 + 排序：重复时间点会让首页分母虚高，也会让设备端多次提醒同一次
+  const times = Array.from(new Set((body.times || []).map((t) => normalizeHM(t))))
     .filter(Boolean)
     .sort();
 
   if (!drug_name) throw badRequest('药品名称不能为空');
   if (!dose) throw badRequest('每次用量不能为空');
   if (!times.length) throw badRequest('至少需要一个服药时间');
-  const badTime = times.find((t) => !/^\d{1,2}:\d{2}$/.test(t));
-  if (badTime) throw badRequest(`时间格式必须是 HH:MM，收到：${badTime}`);
+  const badTime = times.find((t) => !isValidHM(t));
+  if (badTime) throw badRequest(`时间必须是 00:00~23:59 的 HH:MM，收到：${badTime}`);
   // 上限必须 ≤ 云端 taken_today / total_today 的取值上限（int，0~10）。
   // 计划 12 次时设备上报 taken_today=11 会被平台按超范围拒收，
   // 整条属性报文连 weight_g 一起丢掉，比少两个时间点严重得多。
@@ -163,27 +182,40 @@ async function handleSavePlan(body) {
 
 function send(res, code, obj) {
   const body = JSON.stringify(obj);
-  res.writeHead(code, {
+  const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Content-Length': Buffer.byteLength(body)
-  });
+  };
+  // 4xx 时请求体可能还没收完（比如超限只读了一半），
+  // 复用连接会让客户端把剩下的数据继续写在一条已经回复过的连接上，干脆关掉。
+  if (code >= 400) headers.Connection = 'close';
+  res.writeHead(code, headers);
   res.end(body);
 }
 
+const MAX_BODY = 1e6;
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
+    // 头里已经声明超限就直接拒，连 body 都不用收
+    const declared = Number(req.headers['content-length'] || 0);
+    if (declared > MAX_BODY) {
+      req.pause();
+      return reject(badRequest('请求体过大（上限 1MB）', 413));
+    }
     let raw = '';
     let tooLarge = false;
     req.on('data', (c) => {
       if (tooLarge) return;
       raw += c;
-      if (raw.length > 1e6) {
-        // 不能只 destroy：不 reject 的话这个请求会永远挂着，客户端一直等到超时
+      if (raw.length > MAX_BODY) {
         tooLarge = true;
-        req.destroy();
+        // 这里只能 pause 不能 destroy：destroy 会把 socket 直接砍掉，
+        // 上层拿到的 413 根本没机会写回去，客户端只看到「连接被重置」。
+        req.pause();
         reject(badRequest('请求体过大（上限 1MB）', 413));
       }
     });
@@ -201,12 +233,18 @@ function readBody(req) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const route = `${req.method} ${url.pathname}`;
-
   if (req.method === 'OPTIONS') return send(res, 204, {});
 
   try {
+    // new URL 遇到畸形 request-target 会抛异常。放在 try 外面的话，
+    // async handler 抛出的错误没人接，Node 15+ 会直接把进程干掉。
+    let url;
+    try {
+      url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    } catch (e) {
+      return send(res, 400, { ok: false, message: '请求地址不合法' });
+    }
+    const route = `${req.method} ${url.pathname}`;
     if (route === 'GET /api/ping') {
       return send(res, 200, { ok: true, service: 'smart-pillbox relay', time: Date.now() });
     }
@@ -229,7 +267,9 @@ const server = http.createServer(async (req, res) => {
       // 否则「先开记录页、后回首页刷新」的顺序会看不到新记录，很像 bug。
       try {
         const propsRes = await huawei.getProperties();
-        archiveEvent(propsRes.properties || {});
+        // 必须带上 eventTime：归档日期是按「事件发生时刻」换算的，
+        // 不传就会退化成服务器当前时间，23:59 吃药、00:01 打开记录页会记到第二天
+        archiveEvent(propsRes.properties || {}, propsRes.eventTime);
       } catch (e) {
         // 读影子失败不影响展示已有记录
       }
@@ -263,6 +303,41 @@ const server = http.createServer(async (req, res) => {
       detail: err.huawei || err.body || null
     });
   }
+});
+
+/**
+ * 客户端带 Expect: 100-continue 时，Node 默认先回 100 让对端把 body 发过来。
+ * 头里 Content-Length 已经超限的话没必要收，直接 413 更省事，
+ * 也避免「客户端发到一半被拒」这种谁都不舒服的场面。
+ */
+server.on('checkContinue', (req, res) => {
+  const declared = Number(req.headers['content-length'] || 0);
+  if (declared > MAX_BODY) {
+    const body = JSON.stringify({ ok: false, message: '请求体过大（上限 1MB）' });
+    res.writeHead(413, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+      'Content-Length': Buffer.byteLength(body),
+      Connection: 'close'
+    });
+    return res.end(body);
+  }
+  res.writeContinue();
+  server.emit('request', req, res);
+});
+
+/**
+ * 进程级兜底
+ *
+ * 轮询和每个请求虽然都包了 try/catch，但总有意料之外的异步回调
+ * （比如流事件、定时器里抛错）会冒到顶层。Node 15+ 默认直接退出进程，
+ * 演示现场挂一次就得重新起服务，代价太大，所以选择记录后继续跑。
+ */
+process.on('uncaughtException', (err) => {
+  console.error('[未捕获异常]', (err && err.stack) || err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[未处理 Promise]', (reason && reason.stack) || reason);
 });
 
 server.listen(config.PORT, '0.0.0.0', () => {
