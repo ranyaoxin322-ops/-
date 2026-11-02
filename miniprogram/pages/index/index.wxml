@@ -1,0 +1,56 @@
+<view class="page">
+  <view class="head">
+    <text class="date">{{today}}</text>
+    <text class="drug">{{plan.drug_name || '尚未设置药品'}}</text>
+  </view>
+
+  <view class="hero">
+    <text class="hero-label">今日服药进度</text>
+    <text class="hero-big">{{takenText}}</text>
+    <view class="bar">
+      <view class="bar-in" style="width:{{progress}}%"></view>
+    </view>
+    <text class="hero-sub">下一次提醒 {{nextRemind}}{{nextRemindHint ? '（' + nextRemindHint + '）' : ''}}</text>
+
+    <view class="hero-plan">
+      <text class="hero-plan-text">{{planText}}</text>
+    </view>
+  </view>
+
+  <view class="row">
+    <view class="card">
+      <text class="card-label">盒内药量</text>
+      <text class="card-value">{{props.weight_g || 0}}<text class="unit"> g</text></text>
+    </view>
+    <view class="card">
+      <text class="card-label">每次用量</text>
+      <text class="card-value">{{plan.dose || '--'}}</text>
+    </view>
+  </view>
+
+  <view class="card wide">
+    <view class="line">
+      <text class="card-label">设备连接</text>
+      <text class="tag {{online ? 'on' : 'off'}}">{{online ? '在线' : '离线'}}</text>
+    </view>
+    <view class="line">
+      <text class="card-label">当前状态</text>
+      <text class="card-value sm">{{stateText}}</text>
+    </view>
+    <view class="line">
+      <text class="card-label">盒盖</text>
+      <text class="card-value sm">{{props.lid_open ? '已打开' : '已关闭'}}</text>
+    </view>
+    <view class="line">
+      <text class="card-label">上次上报</text>
+      <text class="card-value sm">{{dataTimeText || '暂无'}}</text>
+    </view>
+  </view>
+
+  <view wx:if="{{error}}" class="err">{{error}}</view>
+
+  <view class="actions">
+    <button class="btn ghost" bindtap="refresh">刷新</button>
+    <button class="btn" bindtap="goPlan">设置计划</button>
+  </view>
+</view>

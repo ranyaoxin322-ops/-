@@ -1,0 +1,37 @@
+<view class="page">
+  <view class="head">
+    <text class="date">计划设置</text>
+    <text class="drug">下发给药盒</text>
+  </view>
+
+  <view class="card wide">
+    <text class="card-label">药品名称</text>
+    <input class="ipt" value="{{drug_name}}" placeholder="如 二甲双胍" bindinput="onDrugInput" />
+  </view>
+
+  <view class="card wide">
+    <text class="card-label">每次用量</text>
+    <input class="ipt" value="{{dose}}" placeholder="如 1片" bindinput="onDoseInput" />
+  </view>
+
+  <view class="card wide">
+    <view class="line">
+      <text class="card-label">服药时间</text>
+      <text class="add" bindtap="addTime">+ 添加</text>
+    </view>
+
+    <view class="tlist">
+      <view class="titem" wx:for="{{times}}" wx:key="index">
+        <picker mode="time" value="{{item}}" data-index="{{index}}" bindchange="onTimeChange">
+          <view class="ttime">{{item}}</view>
+        </picker>
+        <text class="del" data-index="{{index}}" bindtap="removeTime">删除</text>
+      </view>
+    </view>
+
+    <text class="hint" wx:if="{{!dirty}}">每天共 {{times.length}} 次，点时间可修改</text>
+    <text class="hint warn" wx:else>已修改但未下发，记得点下方「下发到药盒」</text>
+  </view>
+
+  <button class="btn" loading="{{saving}}" bindtap="save">下发到药盒</button>
+</view>

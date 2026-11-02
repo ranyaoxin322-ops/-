@@ -1,1 +1,150 @@
-init
+# 智能药盒 · 微信小程序端
+
+基于**华为云 IoTDA** 的智能药盒系统，软件部分包含微信小程序、本机中转服务和设备数据协议。
+硬件侧（ESP32 + HX711 称重 + OLED + 蜂鸣器）由另一位同学负责，通过 MQTT 与本项目对接。
+
+## 系统架构
+
+```
+┌─────────────┐   HTTP    ┌──────────────┐  V11-HMAC-SHA256  ┌─────────────┐
+│  微信小程序  │ ────────▶ │  本机中转服务 │ ────────────────▶ │ 华为云 IoTDA │
+│  (3 个页面)  │ ◀──────── │  (Node.js)   │ ◀──────────────── │  设备影子    │
+└─────────────┘           └──────────────┘                   └──────┬──────┘
+                                                                    │ MQTT 1883
+                                                             ┌──────▼──────┐
+                                                             │  ESP32 药盒  │
+                                                             └─────────────┘
+```
+
+小程序**不能直连华为云**：AK/SK 放在前端会被反编译获取，且小程序请求域名需备案。
+因此中间加一层本机 Node 服务，由它完成签名和 API 调用。
+
+## 目录结构
+
+```
+.
+├─ miniprogram/              小程序源码
+│  ├─ pages/index/           今日：进度、下一次提醒、设备状态
+│  ├─ pages/plan/            计划：药品名、用量、服药时间点
+│  ├─ pages/records/         记录：按日期分组，带服药状态标签
+│  ├─ utils/api.js           接口封装（BASE_URL 需改成你电脑的局域网 IP）
+│  └─ app.json / app.wxss    全局配置与主题
+├─ server/                   本机中转服务（零第三方依赖）
+│  ├─ config.example.js      配置模板，复制成 config.js 再填
+│  ├─ huawei.js              华为云 API 客户端（含衍生签名实现）
+│  ├─ server.js              HTTP 服务，提供 4 个接口
+│  ├─ check.js               连通性自检
+│  └─ mqtt-key.js            MQTT 鉴权参数生成器
+├─ project.config.json       微信开发者工具项目配置
+├─ start-server.bat          Windows 双击启动服务
+├─ 使用说明.md                部署与操作步骤
+└─ 对接文档-给A.md            给硬件同学的三元组、topic 与报文格式
+```
+
+## 快速开始
+
+### 1. 配置中转服务
+
+```bash
+cd server
+copy config.example.js config.js     # macOS/Linux: cp
+```
+
+编辑 `config.js`，填 4 个值：
+
+| 变量 | 从哪获取 |
+|---|---|
+| `AK` / `SK` | 华为云控制台 → 我的凭证 → 访问密钥 |
+| `PROJECT_ID` | 我的凭证 → 项目列表 → `cn-north-4` 那一行 |
+| `PREFIX` | 设备接入地址最前面那段，如 `382f09a250` |
+| `DEVICE_ID` | 控制台设备详情页 |
+
+`config.js` 已加入 `.gitignore`，**不会也不应该提交到仓库**。
+
+### 2. 自检
+
+```bash
+node check.js
+```
+
+依次验证配置、签名、设备查询、属性读取。任一步失败会打印华为云原始错误和排查建议。
+
+### 3. 启动
+
+```bash
+node server.js
+# 或 Windows 双击 start-server.bat
+```
+
+启动后打印局域网地址，把它填进 `miniprogram/utils/api.js` 的 `BASE_URL`。
+
+### 4. 导入小程序
+
+微信开发者工具 → 导入项目 → 目录选本仓库根目录 → AppID 填 `wx7d45b3a8751dcbde`
+→ 详情 → 本地设置 → 勾选「不校验合法域名」（服务走 http，不勾会被拦）。
+
+## 接口
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/ping` | 存活检测 + 局域网 IP |
+| GET | `/api/status` | 设备在线状态 + 影子属性 + 当前计划 |
+| GET/POST | `/api/plan` | 读取 / 下发服药计划 |
+| GET | `/api/records` | 服药记录（按 `event_seq` 去重） |
+
+## 数据协议
+
+三条消息，服务 ID 统一为 `PillBox`。
+
+**① 下发计划**（命令 `set_plan`，小程序 → 设备）
+
+```json
+{
+  "service_id": "PillBox",
+  "command_name": "set_plan",
+  "paras": { "drug_name": "二甲双胍", "dose": "1片", "times": "08:00,12:30,19:00" }
+}
+```
+
+**② 状态上报**（属性，设备 → 云）
+
+```json
+{"services":[{"service_id":"PillBox","properties":{
+  "state":"idle","next_time":"19:00","weight_g":128.5,
+  "lid_open":false,"taken_today":1,"total_today":3}}]}
+```
+
+**③ 服药事件上报**（属性，设备 → 云）
+
+```json
+{"services":[{"service_id":"PillBox","properties":{
+  "event_seq":2,"event_drug_name":"二甲双胍","event_dose":"1片",
+  "event_plan_time":"20:05","event_actual_time":"20:12","event_status":"late"}}]}
+```
+
+`event_seq` 自增，云端靠它去重；`event_status` 取 `ontime` / `early` / `late` / `missed`。
+
+## 两个实现要点
+
+**衍生签名（V11-HMAC-SHA256）**：标准版 IoTDA 实例不接受通用的 `SDK-HMAC-SHA256`，
+必须用 HKDF 从 SK 派生出签名密钥，并且派生结果要转成 **hex 字符串**再作为 HMAC key。
+用错算法会一直返回 `401 Authentication failed`，且错误信息不提示原因。实现见 `server/huawei.js`。
+
+**读属性用设备影子而不是 `/properties`**：后者要求设备在线，离线直接 403。
+`/shadow` 存的是最后一次上报值，设备离线也能读，小程序首页靠它渲染。
+
+## 界面逻辑说明
+
+首页「今日服药进度 `N / M`」：
+
+- **分母 M** = 计划里时间点的个数（小程序掌握，始终最新）
+- **分子 N** = 设备上报的 `taken_today`（设备判定完成的次数）
+
+设备离线时 `taken_today` 不会变化，界面会照实显示并在计划行标注「设备仍报 X 次，未同步」，
+不做假的覆盖——这是有意的设计取舍，而非缺陷。
+
+## 已知限制
+
+- 中转服务跑在电脑上，**手机必须与电脑同一局域网**；换 WiFi 后需更新 `BASE_URL`
+- 计划下发给设备后不会持久化到云端，小程序自行缓存一份
+- 华为云同一设备 ID 只允许一个 MQTT 连接，控制台「在线调试」与 MQTT 客户端互斥

@@ -1,0 +1,24 @@
+<view class="page">
+  <view class="head">
+    <text class="date">服药记录</text>
+    <text class="drug">共 {{total}} 条</text>
+  </view>
+
+  <view wx:if="{{loaded && !total}}" class="empty">
+    <text class="empty-t1">还没有服药记录</text>
+    <text class="empty-t2">药盒上报后会自动出现在这里</text>
+  </view>
+
+  <block wx:for="{{groups}}" wx:key="date" wx:for-item="group">
+    <view class="gdate">{{group.date}}</view>
+    <view class="card wide">
+      <view class="ritem" wx:for="{{group.items}}" wx:key="seq">
+        <view class="rleft">
+          <text class="rdrug">{{item.drug_name}}</text>
+          <text class="rtime">计划 {{item.plan_time}} · 实际 {{item.actual_time}}</text>
+        </view>
+        <text class="rtag {{item.statusClass}}">{{item.statusText}}</text>
+      </view>
+    </view>
+  </block>
+</view>

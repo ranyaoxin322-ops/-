@@ -1,0 +1,8 @@
+.page .card.wide .line:first-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.titem picker {
+  flex: 1;
+}

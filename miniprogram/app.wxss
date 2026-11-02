@@ -1,0 +1,285 @@
+page {
+  background: #F4F7F6;
+  color: #1F2A26;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 28rpx;
+  line-height: 1.6;
+}
+
+.page {
+  padding: 28rpx 28rpx 80rpx;
+  box-sizing: border-box;
+}
+
+/* ===== 页头 ===== */
+.head {
+  padding: 8rpx 4rpx 24rpx;
+}
+
+.head .date {
+  display: block;
+  font-size: 24rpx;
+  color: #7A8A84;
+  letter-spacing: 1rpx;
+}
+
+.head .drug {
+  display: block;
+  font-size: 44rpx;
+  font-weight: 600;
+  color: #1F2A26;
+  margin-top: 6rpx;
+}
+
+/* ===== 主卡片 ===== */
+.hero {
+  background: #0F6E56;
+  border-radius: 24rpx;
+  padding: 36rpx 36rpx 32rpx;
+  color: #FFFFFF;
+  margin-bottom: 20rpx;
+}
+
+.hero-label {
+  display: block;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.72);
+  letter-spacing: 1rpx;
+}
+
+.hero-big {
+  display: block;
+  font-size: 76rpx;
+  font-weight: 600;
+  line-height: 1.1;
+  margin: 14rpx 0 22rpx;
+  letter-spacing: 2rpx;
+}
+
+.bar {
+  height: 10rpx;
+  border-radius: 10rpx;
+  background: rgba(255, 255, 255, 0.22);
+  overflow: hidden;
+}
+
+.bar-in {
+  height: 100%;
+  border-radius: 10rpx;
+  background: #7FE0BE;
+  transition: width 0.35s ease;
+}
+
+.hero-sub {
+  display: block;
+  margin-top: 18rpx;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* 卡片里展示已设置的计划时间点，让「设置计划」有可见反馈 */
+.hero-plan {
+  margin-top: 16rpx;
+  padding: 14rpx 20rpx;
+  border-radius: 14rpx;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.hero-plan-text {
+  font-size: 24rpx;
+  line-height: 34rpx;
+  color: #FFFFFF;
+}
+
+/* ===== 卡片 ===== */
+.row {
+  display: flex;
+  margin-bottom: 20rpx;
+}
+
+.row .card {
+  flex: 1;
+  margin-right: 20rpx;
+}
+
+.row .card:last-child {
+  margin-right: 0;
+}
+
+.card {
+  background: #FFFFFF;
+  border-radius: 20rpx;
+  padding: 28rpx 30rpx;
+  box-sizing: border-box;
+}
+
+.card.wide {
+  margin-bottom: 20rpx;
+}
+
+.card-label {
+  display: block;
+  font-size: 24rpx;
+  color: #7A8A84;
+}
+
+.card-value {
+  display: block;
+  font-size: 40rpx;
+  font-weight: 600;
+  color: #1F2A26;
+  margin-top: 10rpx;
+}
+
+.card-value.sm {
+  font-size: 28rpx;
+  font-weight: 500;
+  margin-top: 0;
+}
+
+.card .unit {
+  font-size: 24rpx;
+  font-weight: 400;
+  color: #7A8A84;
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid #EEF2F0;
+}
+
+.line:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.line:first-child {
+  padding-top: 0;
+}
+
+/* ===== 标签 ===== */
+.tag {
+  font-size: 22rpx;
+  padding: 4rpx 16rpx;
+  border-radius: 100rpx;
+}
+
+.tag.on {
+  background: #E1F5EE;
+  color: #0F6E56;
+}
+
+.tag.off {
+  background: #F0F2F1;
+  color: #8A9A94;
+}
+
+/* ===== 按钮 ===== */
+.btn {
+  margin-top: 28rpx;
+  height: 92rpx;
+  line-height: 92rpx;
+  border-radius: 16rpx;
+  background: #0F6E56;
+  color: #FFFFFF;
+  font-size: 30rpx;
+  font-weight: 500;
+  text-align: center;
+  border: none;
+}
+
+.btn::after {
+  border: none;
+}
+
+.btn.ghost {
+  background: #FFFFFF;
+  color: #0F6E56;
+  border: 1rpx solid #CFE7DE;
+}
+
+.actions {
+  display: flex;
+}
+
+.actions .btn {
+  flex: 1;
+  margin-right: 20rpx;
+}
+
+.actions .btn:last-child {
+  margin-right: 0;
+}
+
+/* ===== 表单 ===== */
+.ipt {
+  height: 76rpx;
+  font-size: 32rpx;
+  color: #1F2A26;
+  margin-top: 8rpx;
+  border-bottom: 1rpx solid #EEF2F0;
+}
+
+.add {
+  font-size: 26rpx;
+  color: #0F6E56;
+  padding: 4rpx 8rpx;
+}
+
+.hint {
+  display: block;
+  font-size: 22rpx;
+  color: #A0ADA7;
+  margin-top: 16rpx;
+}
+
+.hint.warn {
+  color: #BA7517;
+}
+
+/* ===== 时间列表 ===== */
+.tlist {
+  margin-top: 8rpx;
+}
+
+.titem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid #EEF2F0;
+}
+
+.ttime {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #1F2A26;
+  letter-spacing: 2rpx;
+}
+
+.del {
+  font-size: 24rpx;
+  color: #C0554F;
+  padding: 4rpx 12rpx;
+}
+
+/* ===== 提示 ===== */
+.err {
+  background: #FCEDEC;
+  color: #A8352F;
+  border-radius: 16rpx;
+  padding: 22rpx 26rpx;
+  font-size: 25rpx;
+  line-height: 1.6;
+  margin-bottom: 20rpx;
+}
+
+.empty {
+  padding: 140rpx 0;
+  text-align: center;
+  color: #A0ADA7;
+  font-size: 26rpx;
+}

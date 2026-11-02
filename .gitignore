@@ -1,0 +1,27 @@
+# ---------- 依赖 ----------
+node_modules/
+
+# ---------- 密钥：绝对不提交 ----------
+# 里面是华为云 AK/SK、项目 ID、设备密钥
+# 首次使用请把 config.example.js 复制成 config.js 再填
+server/config.js
+
+# ---------- 运行期数据 ----------
+# 服药记录、计划缓存，属于本地演示数据
+server/data/
+
+# ---------- 微信开发者工具个人设置 ----------
+project.private.config.json
+
+# ---------- 模板遗留（本项目用不到） ----------
+cloudfunctions/
+uploadCloudFunction.sh
+miniprogram/images/
+miniprogram/components/
+miniprogram/pages/example/
+miniprogram/envList.js
+
+# ---------- 系统垃圾 ----------
+.DS_Store
+Thumbs.db
+*.log

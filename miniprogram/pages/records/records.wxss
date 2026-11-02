@@ -1,0 +1,83 @@
+.gdate {
+  font-size: 24rpx;
+  color: #7A8A84;
+  padding: 12rpx 8rpx 14rpx;
+  letter-spacing: 1rpx;
+}
+
+.ritem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22rpx 0;
+  border-bottom: 1rpx solid #EEF2F0;
+}
+
+.ritem:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.ritem:first-child {
+  padding-top: 0;
+}
+
+.rleft {
+  flex: 1;
+  min-width: 0;
+}
+
+.rdrug {
+  display: block;
+  font-size: 30rpx;
+  font-weight: 500;
+  color: #1F2A26;
+}
+
+.rtime {
+  display: block;
+  font-size: 23rpx;
+  color: #8A9A94;
+  margin-top: 6rpx;
+}
+
+.rtag {
+  flex: none;
+  font-size: 22rpx;
+  padding: 6rpx 18rpx;
+  border-radius: 100rpx;
+  margin-left: 20rpx;
+}
+
+.st-ok {
+  background: #E1F5EE;
+  color: #0F6E56;
+}
+
+.st-early {
+  background: #E6F1FB;
+  color: #185FA5;
+}
+
+.st-late {
+  background: #FAEEDA;
+  color: #854F0B;
+}
+
+.st-miss {
+  background: #FCEDEC;
+  color: #A8352F;
+}
+
+.empty-t1 {
+  display: block;
+  font-size: 30rpx;
+  color: #8A9A94;
+}
+
+.empty-t2 {
+  display: block;
+  font-size: 24rpx;
+  color: #A0ADA7;
+  margin-top: 12rpx;
+}
