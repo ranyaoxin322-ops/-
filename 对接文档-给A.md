@@ -85,7 +85,7 @@ $oc/devices/6ae6fbd37f2e6c302fa9050f_pillbox_01/sys/properties/report
 | 开机 / 每 60 秒心跳 | `state` `next_time` `weight_g` `taken_today` `total_today` |
 | 打开盒盖 | `lid_open: true` `state: "opened"` |
 | 关闭盒盖 | `lid_open: false` `state: "idle"` |
-| 到点提醒 | `state: "reminding"` |
+| 到点提醒 | `state: "reminder"` |
 | **确认服药完成** | 状态字段 + 下面那一组事件字段 |
 
 ### 服药完成时额外要发的（重要）
@@ -231,13 +231,13 @@ Topic: $oc/devices/6ae6fbd37f2e6c302fa9050f_pillbox_01/sys/commands/response/req
 
 | 字段 | 类型 | 方向 | 说明 |
 |---|---|---|---|
-| `state` | string | 上报 | `idle` / `reminding` / `opened` |
-| `next_time` | string | 上报 | 下一次提醒，`HH:MM` |
+| `state` | string | 上报 | `idle` / `reminder` / `opened`（**注意是 reminder，不是 reminding**，多一个 i 平台就拒收） |
+| `next_time` | string | 上报 | 下一次提醒，`HH:MM`（⚠️ 见下方「属性名核对」） |
 | `weight_g` | decimal | 上报 | 药重，克，保留 1~2 位小数 |
 | `lid_open` | boolean | 上报 | 盒盖是否打开 |
 | `taken_today` | int | 上报 | 今日已完成次数 |
 | `total_today` | int | 上报 | 今日计划次数 |
-| `event_seq` | int | 上报 | 事件序号，自增，**不能重复** |
+| `event_seq` | int | 上报 | 事件序号，同一自然日内自增、**不能重复**；跨天可以重新从 1 开始 |
 | `event_drug_name` | string | 上报 | 本次药品名 |
 | `event_dose` | string | 上报 | 本次用量 |
 | `event_plan_time` | string | 上报 | 计划时间 `HH:MM` |
@@ -248,6 +248,17 @@ Topic: $oc/devices/6ae6fbd37f2e6c302fa9050f_pillbox_01/sys/commands/response/req
 | `times` | string | 下发 | 逗号分隔的时间点 |
 | `base_g` | decimal | 下发 | `tare` 命令的参数，去皮基准重量（选填） |
 | `result` | int | 回执 | 0 = 成功 |
+
+### 属性名核对（务必先对一遍）
+
+华为云**不会**因为属性名写错而给你明确的报错——设备照样 publish 成功，平台默默把这条字段丢掉，
+小程序那边就是"某个值一直不变"。所以第一次联调前，打开控制台 → 产品 → 模型定义，
+把属性列表和上表**逐字**对一遍，特别是这两个历史遗留：
+
+| 表里写的 | 如果控制台里是 | 怎么办 |
+|---|---|---|
+| `next_time`（下划线） | `next-time`（连字符） | 把物模型属性改名成 `next_time`，否则这个值永远读不到 |
+| `state` 取值 `reminder` | 枚举里写的是 `reminding` | 把枚举值改成 `reminder`（或反过来，但两边必须一致） |
 
 ---
 

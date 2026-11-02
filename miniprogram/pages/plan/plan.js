@@ -1,5 +1,33 @@
 const api = require('../../utils/api');
 
+/** 去重 + 升序。重复时间点会让首页分母虚高（显示 4 次其实只能吃 3 次） */
+function normalizeTimes(list) {
+  const seen = {};
+  const out = [];
+  (list || []).forEach((t) => {
+    const s = String(t || '').trim();
+    if (!s || seen[s]) return;
+    seen[s] = true;
+    out.push(s);
+  });
+  return out.sort();
+}
+
+/** 常用的几个时间都被占了，就在最后一个时间上往后推 1 小时，最多绕一圈 */
+function nextHourOf(last, used) {
+  const pad = (n) => String(n).padStart(2, '0');
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(last || '08:00'));
+  let h = m ? Number(m[1]) : 8;
+  const mi = m ? Number(m[2]) : 0;
+  let pick = '';
+  for (let i = 0; i < 24; i++) {
+    h = (h + 1) % 24;
+    pick = pad(h) + ':' + pad(mi);
+    if (used.indexOf(pick) < 0) break;
+  }
+  return pick;
+}
+
 Page({
   data: {
     drug_name: '',
@@ -11,7 +39,9 @@ Page({
   },
 
   onShow() {
-    if (!this.data.loaded) this.loadPlan();
+    // 没改过就重新拉一次：在别的地方（或重启后端后）改了计划，切回来能看到最新值。
+    // 改过但没保存时不动，否则会把用户正在编辑的内容冲掉。
+    if (!this.data.loaded || !this.data.dirty) this.loadPlan();
   },
 
   loadPlan() {
@@ -23,7 +53,7 @@ Page({
           loaded: true,
           drug_name: (p && p.drug_name) || '',
           dose: (p && p.dose) || '',
-          times: p && p.times && p.times.length ? p.times : ['08:00']
+          times: p && p.times && p.times.length ? normalizeTimes(p.times) : ['08:00']
         });
       })
       .catch(() => {
@@ -43,14 +73,15 @@ Page({
     const index = e.currentTarget.dataset.index;
     const times = this.data.times.slice();
     times[index] = e.detail.value;
-    times.sort();
-    this.setData({ times, dirty: true });
+    this.setData({ times: normalizeTimes(times), dirty: true });
   },
 
   addTime() {
-    const last = this.data.times[this.data.times.length - 1] || '08:00';
-    const times = this.data.times.concat(last);
-    this.setData({ times, dirty: true });
+    const used = this.data.times.slice();
+    // 优先补一个常用时段，避免「添加」出来的时间和已有的重复（重复会被去重掉，看起来像没反应）
+    const pick = ['08:00', '12:00', '18:00', '20:00', '22:00'].find((t) => used.indexOf(t) < 0) ||
+      nextHourOf(used[used.length - 1], used);
+    this.setData({ times: normalizeTimes(used.concat(pick)), dirty: true });
   },
 
   removeTime(e) {

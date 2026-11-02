@@ -1,7 +1,10 @@
 const api = require('../../utils/api');
 
+// 注意：华为云物模型里 state 的枚举值是 idle / reminder / opened（不是 reminding）。
+// 两种写法都映射，避免设备端按旧文档上报后页面显示成「待机中」。
 const STATE_TEXT = {
   idle: '待机中',
+  reminder: '正在提醒',
   reminding: '正在提醒',
   opened: '盒盖已打开'
 };
@@ -40,16 +43,31 @@ function computeNext(times) {
   return { text: sorted[0], hint: '明天' };
 }
 
-/** 华为云 event_time "20261101T093014Z" -> 本地 "17:30" */
-function formatEventTime(t) {
-  if (!t || t.length < 15) return '';
+/** 华为云 event_time "20261102T090851Z" -> Date（UTC 解析，取绝对值） */
+function parseEventTime(t) {
+  if (!t || t.length < 15) return null;
   const iso =
     t.slice(0, 4) + '-' + t.slice(4, 6) + '-' + t.slice(6, 8) +
     'T' + t.slice(9, 11) + ':' + t.slice(11, 13) + ':' + t.slice(13, 15) + 'Z';
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return '';
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/** 华为云 event_time "20261101T093014Z" -> 本地 "17:30" */
+function formatEventTime(t) {
+  const d = parseEventTime(t);
+  if (!d) return '';
   const pad = (n) => String(n).padStart(2, '0');
   return pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+/** 两个时间是否是本地同一天 */
+function isSameLocalDay(a, b) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
 }
 
 Page({
@@ -98,9 +116,22 @@ Page({
         // 设备影子里的 total_today 只在设备上报时才更新，离线就会冻住。
         // 两者都不存在时才显示 0 / 0。
         const deviceTotal = Number(props.total_today || 0);
-        const taken = Number(props.taken_today || 0);
         const total = times.length > 0 ? times.length : deviceTotal;
         const unsynced = times.length > 0 && deviceTotal > 0 && deviceTotal !== times.length;
+
+        // 分子只在「设备最后一次上报是今天」时才采信。
+        // 设备夜里离线、跨天后 taken_today 还停着昨天的值（比如 3/3），
+        // 第二天一打开就会显示「已完成」，这是最坑人的一种假象。
+        const eventDate = parseEventTime(res.eventTime);
+        const reportedToday = !!(eventDate && isSameLocalDay(eventDate, new Date()));
+        const takenRaw = Math.max(0, Number(props.taken_today || 0));
+        const taken = reportedToday ? takenRaw : 0;
+        // 设备报的次数据超过计划（计划被改小、或设备没清零）时，进度条不溢出但数字要照实说
+        const takenShown = total > 0 ? Math.min(taken, total) : taken;
+        const overTaken = total > 0 && taken > total;
+        const staleHint = !reportedToday && takenRaw > 0 ? '设备今日未上报，进度按 0 计' : '';
+        const notes = [staleHint, overTaken ? `设备实报 ${taken} 次，超出计划` : ''].filter(Boolean);
+
         const next = times.length
           ? computeNext(times)
           : { text: props.next_time || '--:--', hint: '' };
@@ -109,15 +140,16 @@ Page({
           props,
           online: !!res.online,
           stateText: STATE_TEXT[props.state] || '待机中',
-          takenText: `${taken} / ${total}`,
-          progress: total ? Math.min(100, Math.round((taken / total) * 100)) : 0,
+          takenText: `${takenShown} / ${total}`,
+          progress: total ? Math.min(100, Math.round((takenShown / total) * 100)) : 0,
           planTimes: times,
           nextRemind: next.text,
           nextRemindHint: next.hint,
           dataTimeText: formatEventTime(res.eventTime),
           planText: times.length
             ? `每日 ${times.length} 次 · ${times.join(' / ')}` +
-              (unsynced ? `（设备仍报 ${deviceTotal} 次，未同步）` : '')
+              (unsynced ? `（设备仍报 ${deviceTotal} 次，未同步）` : '') +
+              (notes.length ? `（${notes.join('；')}）` : '')
             : '尚未设置服药时间'
         });
       })

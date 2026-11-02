@@ -38,14 +38,16 @@ function todayStr() {
 
 /**
  * 设备上报服药事件后，把最新一次事件归档成本地记录。
- * 靠 event_seq 去重：同一条事件只入库一次。
+ * 去重键是「日期 + event_seq」：设备如果把 event_seq 每天从 1 开始，
+ * 只用 seq 去重会导致第二天的第一条记录被当成重复而丢掉。
  */
 function archiveEvent(props) {
   const seq = Number(props.event_seq || 0);
   if (!seq) return;
 
+  const date = todayStr();
   const records = readJson(RECORD_FILE, []);
-  if (records.some((r) => Number(r.seq) === seq)) return;
+  if (records.some((r) => Number(r.seq) === seq && r.date === date)) return;
 
   records.push({
     seq,
@@ -54,7 +56,7 @@ function archiveEvent(props) {
     plan_time: props.event_plan_time || '',
     actual_time: props.event_actual_time || '',
     status: props.event_status || 'ontime',
-    date: todayStr(),
+    date,
     archived_at: Date.now()
   });
 
@@ -89,11 +91,17 @@ async function handleStatus() {
 async function handleSavePlan(body) {
   const drug_name = String(body.drug_name || '').trim();
   const dose = String(body.dose || '').trim();
-  const times = (body.times || []).filter(Boolean);
+  // 去重 + 排序：重复时间点会让首页分母虚高，也会让设备端多次提醒同一次
+  const times = Array.from(new Set((body.times || []).map((t) => String(t || '').trim())))
+    .filter(Boolean)
+    .sort();
 
   if (!drug_name) throw new Error('药品名称不能为空');
   if (!dose) throw new Error('每次用量不能为空');
   if (!times.length) throw new Error('至少需要一个服药时间');
+  const badTime = times.find((t) => !/^\d{1,2}:\d{2}$/.test(t));
+  if (badTime) throw new Error(`时间格式必须是 HH:MM，收到：${badTime}`);
+  if (times.length > 12) throw new Error('服药时间点过多（上限 12 个）');
 
   const plan = { drug_name, dose, times, updated_at: Date.now() };
 
@@ -138,11 +146,19 @@ function send(res, code, obj) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let raw = '';
+    let tooLarge = false;
     req.on('data', (c) => {
+      if (tooLarge) return;
       raw += c;
-      if (raw.length > 1e6) req.destroy();
+      if (raw.length > 1e6) {
+        // 不能只 destroy：不 reject 的话这个请求会永远挂着，客户端一直等到超时
+        tooLarge = true;
+        req.destroy();
+        reject(new Error('请求体过大（上限 1MB）'));
+      }
     });
     req.on('end', () => {
+      if (tooLarge) return;
       if (!raw) return resolve({});
       try {
         resolve(JSON.parse(raw));
