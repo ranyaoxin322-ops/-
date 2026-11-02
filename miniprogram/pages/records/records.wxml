@@ -21,4 +21,8 @@
       </view>
     </view>
   </block>
+
+  <view wx:if="{{hasMissed}}" class="note">
+    「漏服」是按计划时间推算的：计划时间已过 30 分钟且当天没有对应服药记录。设备只在真的吃药时上报，不会上报「没吃」。
+  </view>
 </view>

@@ -222,12 +222,15 @@ function start() {
           sock.write(subscribePacket(SUB_TOPIC));
           console.log(`  ✓ 已订阅 ${SUB_TOPIC}`);
           if (wantReport) {
+            // 初始上报也认 --taken，否则小程序首页和记录页会对不上
+            // （记录里有几次、首页却显示 0 次，看起来像漏记）
+            const takenArg = process.argv.find((a) => a.startsWith('--taken='));
             reportProps(sock, {
               state: 'idle',
               next_time: '19:00',
               weight_g: 128.5,
               lid_open: false,
-              taken_today: 0,
+              taken_today: takenArg ? Number(takenArg.split('=')[1]) : 0,
               total_today: 3
             });
           }

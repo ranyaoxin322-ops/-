@@ -1,4 +1,5 @@
 const api = require('../../utils/api');
+const missedUtil = require('../../utils/missed');
 
 // 注意：华为云物模型里 state 的枚举值是 idle / reminder / opened（不是 reminding）。
 // 两种写法都映射，避免设备端按旧文档上报后页面显示成「待机中」。
@@ -85,7 +86,9 @@ Page({
     planTimes: [],
     nextRemind: '--:--',
     nextRemindHint: '',
-    dataTimeText: ''
+    dataTimeText: '',
+    missedTimes: [],
+    missedText: ''
   },
 
   onLoad() {
@@ -135,6 +138,15 @@ Page({
         const next = times.length
           ? computeNext(times)
           : { text: props.next_time || '--:--', hint: '' };
+
+        // 漏服：设备不会上报「没吃」，只能按「计划已过期 + 当天无记录」推算。
+        // 设备离线时这个推算不可靠（可能其实吃了但没上报），所以要标注出来。
+        const missed = times.length ? missedUtil.findMissed(times, res.records, new Date()) : [];
+        const missedText = missed.length
+          ? `逾期未服 ${missed.length} 次：${missed.join(' / ')}` +
+            (res.online ? '（按计划推算）' : '（设备离线，仅供参考）')
+          : '';
+
         this.setData({
           plan,
           props,
@@ -146,6 +158,8 @@ Page({
           nextRemind: next.text,
           nextRemindHint: next.hint,
           dataTimeText: formatEventTime(res.eventTime),
+          missedTimes: missed,
+          missedText,
           planText: times.length
             ? `每日 ${times.length} 次 · ${times.join(' / ')}` +
               (unsynced ? `（设备仍报 ${deviceTotal} 次，未同步）` : '') +

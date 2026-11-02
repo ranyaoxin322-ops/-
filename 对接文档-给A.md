@@ -233,10 +233,10 @@ Topic: $oc/devices/6ae6fbd37f2e6c302fa9050f_pillbox_01/sys/commands/response/req
 |---|---|---|---|
 | `state` | string | 上报 | `idle` / `reminder` / `opened`（**注意是 reminder，不是 reminding**，多一个 i 平台就拒收） |
 | `next_time` | string | 上报 | 下一次提醒，`HH:MM`（⚠️ 见下方「属性名核对」） |
-| `weight_g` | decimal | 上报 | 药重，克，保留 1~2 位小数 |
+| `weight_g` | decimal | 上报 | 秤盘总重（含药盒），克，保留 1~2 位小数 |
 | `lid_open` | boolean | 上报 | 盒盖是否打开 |
-| `taken_today` | int | 上报 | 今日已完成次数 |
-| `total_today` | int | 上报 | 今日计划次数 |
+| `taken_today` | int | 上报 | 今日已完成次数，取值 **0~10**（物模型上限就是 10，超了整条报文会被拒） |
+| `total_today` | int | 上报 | 今日计划次数，取值 **0~10** |
 | `event_seq` | int | 上报 | 事件序号，同一自然日内自增、**不能重复**；跨天可以重新从 1 开始 |
 | `event_drug_name` | string | 上报 | 本次药品名 |
 | `event_dose` | string | 上报 | 本次用量 |
@@ -253,12 +253,18 @@ Topic: $oc/devices/6ae6fbd37f2e6c302fa9050f_pillbox_01/sys/commands/response/req
 
 华为云**不会**因为属性名写错而给你明确的报错——设备照样 publish 成功，平台默默把这条字段丢掉，
 小程序那边就是"某个值一直不变"。所以第一次联调前，打开控制台 → 产品 → 模型定义，
-把属性列表和上表**逐字**对一遍，特别是这两个历史遗留：
+把属性列表和上表**逐字**对一遍。
 
-| 表里写的 | 如果控制台里是 | 怎么办 |
+> 2026-11-02 已核对通过：现网 12 个属性和上表完全一致（`next_time` 是下划线，`state` 枚举是 `idle/reminder/opened`）。
+> 下面这张表是两个曾经踩过的坑，留着给后面接手的人对答案：
+
+| 表里写的 | 曾经控制台里是 | 处理方式 |
 |---|---|---|
-| `next_time`（下划线） | `next-time`（连字符） | 把物模型属性改名成 `next_time`，否则这个值永远读不到 |
-| `state` 取值 `reminder` | 枚举里写的是 `reminding` | 把枚举值改成 `reminder`（或反过来，但两边必须一致） |
+| `next_time`（下划线） | `next-time`（连字符） | 已改为 `next_time`，若再出现请改回 |
+| `state` 取值 `reminder` | 枚举里写的是 `reminding` | 现网枚举是 `reminder`，固件别写 `reminding` |
+
+另外注意：**计划时间点上限 10 个**，因为 `taken_today`/`total_today` 是 int(0~10)。
+如果计划排到 11 次以上，设备上报 11 会被平台判超范围，**整条属性报文连同重量一起丢掉**。
 
 ---
 

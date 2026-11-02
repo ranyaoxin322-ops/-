@@ -91,6 +91,18 @@ page {
   color: #FFFFFF;
 }
 
+/* 逾期未服提示：计划时间已过宽限期且当天没有对应记录 */
+.hero-missed {
+  display: block;
+  margin-top: 12rpx;
+  padding: 12rpx 20rpx;
+  border-radius: 14rpx;
+  background: rgba(255, 205, 199, 0.18);
+  font-size: 24rpx;
+  line-height: 34rpx;
+  color: #FFD9D4;
+}
+
 /* ===== 卡片 ===== */
 .row {
   display: flex;

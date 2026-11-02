@@ -81,3 +81,14 @@
   color: #A0ADA7;
   margin-top: 12rpx;
 }
+
+/* 「漏服」来源说明：推算值，不是设备上报 */
+.note {
+  margin-top: 8rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  background: #F7F8F7;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: #8A9A94;
+}

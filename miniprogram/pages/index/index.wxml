@@ -15,6 +15,8 @@
     <view class="hero-plan">
       <text class="hero-plan-text">{{planText}}</text>
     </view>
+
+    <text wx:if="{{missedText}}" class="hero-missed">{{missedText}}</text>
   </view>
 
   <view class="row">

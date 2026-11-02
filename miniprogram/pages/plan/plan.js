@@ -78,6 +78,12 @@ Page({
 
   addTime() {
     const used = this.data.times.slice();
+    // 上限 10 个：云端 taken_today / total_today 是 int(0~10)，
+    // 超过 10 次时设备上报的已完成次数会超范围，被平台整条拒收。
+    if (used.length >= 10) {
+      wx.showToast({ title: '最多 10 个服药时间', icon: 'none' });
+      return;
+    }
     // 优先补一个常用时段，避免「添加」出来的时间和已有的重复（重复会被去重掉，看起来像没反应）
     const pick = ['08:00', '12:00', '18:00', '20:00', '22:00'].find((t) => used.indexOf(t) < 0) ||
       nextHourOf(used[used.length - 1], used);

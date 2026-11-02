@@ -30,8 +30,32 @@ function writeJson(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
 }
 
+/** 调用方参数有误：回 400，不当成服务端故障 */
+function badRequest(msg, status = 400) {
+  const e = new Error(msg);
+  e.httpStatus = status;
+  return e;
+}
+
 function todayStr() {
   const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/**
+ * 华为云 event_time "20261102T090851Z" -> 本地日期 "2026-11-02"
+ * 归档日期必须取「事件发生时间」，不能取「服务器当前时间」：
+ * 设备 23:59 吃药、服务器 00:01 才轮询到，按当前时间会把记录算到第二天。
+ */
+function dateFromEventTime(t) {
+  if (!t || String(t).length < 15) return todayStr();
+  const s = String(t);
+  const d = new Date(
+    `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T` +
+      `${s.slice(9, 11)}:${s.slice(11, 13)}:${s.slice(13, 15)}Z`
+  );
+  if (isNaN(d.getTime())) return todayStr();
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
@@ -40,12 +64,15 @@ function todayStr() {
  * 设备上报服药事件后，把最新一次事件归档成本地记录。
  * 去重键是「日期 + event_seq」：设备如果把 event_seq 每天从 1 开始，
  * 只用 seq 去重会导致第二天的第一条记录被当成重复而丢掉。
+ *
+ * @param {object} props     设备影子里的属性
+ * @param {string} [eventTime] 华为云 event_time，用来确定归档到哪一天
  */
-function archiveEvent(props) {
+function archiveEvent(props, eventTime) {
   const seq = Number(props.event_seq || 0);
   if (!seq) return;
 
-  const date = todayStr();
+  const date = dateFromEventTime(eventTime);
   const records = readJson(RECORD_FILE, []);
   if (records.some((r) => Number(r.seq) === seq && r.date === date)) return;
 
@@ -68,7 +95,7 @@ async function handleStatus() {
   const propsRes = await huawei.getProperties();
   const props = propsRes.properties || {};
 
-  archiveEvent(props);
+  archiveEvent(props, propsRes.eventTime);
 
   let online = false;
   try {
@@ -96,12 +123,15 @@ async function handleSavePlan(body) {
     .filter(Boolean)
     .sort();
 
-  if (!drug_name) throw new Error('药品名称不能为空');
-  if (!dose) throw new Error('每次用量不能为空');
-  if (!times.length) throw new Error('至少需要一个服药时间');
+  if (!drug_name) throw badRequest('药品名称不能为空');
+  if (!dose) throw badRequest('每次用量不能为空');
+  if (!times.length) throw badRequest('至少需要一个服药时间');
   const badTime = times.find((t) => !/^\d{1,2}:\d{2}$/.test(t));
-  if (badTime) throw new Error(`时间格式必须是 HH:MM，收到：${badTime}`);
-  if (times.length > 12) throw new Error('服药时间点过多（上限 12 个）');
+  if (badTime) throw badRequest(`时间格式必须是 HH:MM，收到：${badTime}`);
+  // 上限必须 ≤ 云端 taken_today / total_today 的取值上限（int，0~10）。
+  // 计划 12 次时设备上报 taken_today=11 会被平台按超范围拒收，
+  // 整条属性报文连 weight_g 一起丢掉，比少两个时间点严重得多。
+  if (times.length > 10) throw badRequest('服药时间点过多（最多 10 个）');
 
   const plan = { drug_name, dose, times, updated_at: Date.now() };
 
@@ -154,7 +184,7 @@ function readBody(req) {
         // 不能只 destroy：不 reject 的话这个请求会永远挂着，客户端一直等到超时
         tooLarge = true;
         req.destroy();
-        reject(new Error('请求体过大（上限 1MB）'));
+        reject(badRequest('请求体过大（上限 1MB）', 413));
       }
     });
     req.on('end', () => {
@@ -163,7 +193,7 @@ function readBody(req) {
       try {
         resolve(JSON.parse(raw));
       } catch (e) {
-        reject(new Error('请求体不是合法 JSON'));
+        reject(badRequest('请求体不是合法 JSON'));
       }
     });
     req.on('error', reject);
@@ -223,7 +253,10 @@ const server = http.createServer(async (req, res) => {
         : code === 'IOTDA.014000'
         ? '设备不存在。检查 config.js 里的 DEVICE_ID 是否和控制台一致。'
         : err.message || '服务内部错误';
-    send(res, 500, {
+    // 参数错误回 400、平台侧问题回 502、其余才算 500。
+    // 全回 500 会让前端分不清「我填错了」和「云上出事了」。
+    const status = err.httpStatus || (err.huawei ? 502 : 500);
+    send(res, status, {
       ok: false,
       message: friendly,
       statusCode: err.statusCode || null,
@@ -252,3 +285,31 @@ server.listen(config.PORT, '0.0.0.0', () => {
   console.log('  把这个局域网 IP 填进 miniprogram/utils/api.js 的 BASE_URL');
   console.log('');
 });
+
+/**
+ * 定时轮询设备影子并归档
+ *
+ * 为什么需要：影子只保留「最后一次上报」，而归档原本只在有人请求接口时才触发。
+ * 设备连续上报两条事件、中间没人打开小程序，第一条就被覆盖掉了。
+ * 服务端自己每 10 秒读一次影子，两次服药不可能只隔 10 秒，等于把窗口补上。
+ *
+ * 设环境变量 POLL_MS=0 可关闭（比如答辩时想完全手动控制）。
+ */
+const POLL_MS = Number(process.env.POLL_MS === undefined ? 10000 : process.env.POLL_MS);
+if (POLL_MS > 0) {
+  let polling = false;
+  const pollOnce = async () => {
+    if (polling) return; // 上一轮还没回来就跳过，避免请求堆积
+    polling = true;
+    try {
+      const res = await huawei.getProperties();
+      if (res && res.properties) archiveEvent(res.properties, res.eventTime);
+    } catch (e) {
+      // 网络抖动、设备离线、凭证过期都可能失败，下一轮继续，不影响接口服务
+    } finally {
+      polling = false;
+    }
+  };
+  setInterval(pollOnce, POLL_MS);
+  console.log(`  [归档] 影子轮询已开启：每 ${POLL_MS / 1000} 秒检查一次设备事件`);
+}
