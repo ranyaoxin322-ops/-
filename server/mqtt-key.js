@@ -14,10 +14,10 @@ const DEVICE_SECRET = config.DEVICE_SECRET;
 // Huawei 的时间戳格式：yyyyMMddHH，必须是 UTC，不是北京时间
 const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 10);
 
-const password = crypto
-  .createHmac('sha256', DEVICE_SECRET)
-  .update(ts, 'utf8')
-  .digest('hex'); // 注意：小写十六进制，不能转大写
+// 【关键】华为云的算法是 HMAC-SHA256(key = 时间戳, data = 设备密钥)，
+// 注意 key 和 data 的顺序：时间戳当密钥，设备密钥当消息体。
+// 写反了（密钥当 key、时间戳当消息）会一直返回 "Bad username or password"。
+const password = crypto.createHmac('sha256', ts).update(DEVICE_SECRET, 'utf8').digest('hex');
 
 // 算出这组密码在本地时间的几点失效
 const expire = new Date();
@@ -29,7 +29,7 @@ console.log('  MQTT.fx 连接参数（复制下面三行）');
 console.log('  ' + '-'.repeat(52));
 console.log('  Broker Address : ' + config.MQTT_HOST);
 console.log('  Broker Port    : ' + config.MQTT_PORT);
-console.log('  Client ID      : ' + DEVICE_ID + '_0_0_' + ts);
+console.log('  Client ID      : ' + DEVICE_ID + '_0_1_' + ts);
 console.log('  User Name      : ' + DEVICE_ID);
 console.log('  Password       : ' + password);
 console.log('  ' + '-'.repeat(52));

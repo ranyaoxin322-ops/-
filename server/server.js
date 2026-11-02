@@ -98,9 +98,9 @@ async function handleSavePlan(body) {
   const plan = { drug_name, dose, times, updated_at: Date.now() };
 
   // 命令接口是同步的：平台把报文投给设备后，要等设备回执。
-  // MQTT.fx 这种手动客户端不会回执，平台等满超时就返回超时——
-  // 但命令其实已经投递出去了。这种情况不该判成失败，否则
-  // 小程序会弹「下发失败」，可 MQTT.fx 那边明明收到了，很容易误判。
+  // 正常固件（或 device-sim.js）会在 1 秒内回执，接口直接成功。
+  // 只有设备侧没实现回执时才会走超时分支——那时命令其实已经投递出去了，
+  // 不该判成失败，否则小程序会弹「下发失败」而设备明明收到了。
   let command = null;
   let warning = '';
   try {
@@ -112,8 +112,8 @@ async function handleSavePlan(body) {
   } catch (err) {
     if (err.isTimeout) {
       warning =
-        '命令已发出，但没等到设备回执（MQTT.fx 不会自动回执）。' +
-        '去 MQTT.fx 的订阅窗口看有没有收到 set_plan，收到就说明下发成功。';
+        '命令已发出，但设备没有回执（平台只等 20 秒）。' +
+        '检查设备固件是否收到命令后立刻回执 result_code=0。';
     } else {
       throw err;
     }
@@ -203,7 +203,7 @@ const server = http.createServer(async (req, res) => {
     const code = err.huawei && err.huawei.error_code;
     const friendly =
       code === 'IOTDA.014016'
-        ? '药盒不在线。请先用 MQTT.fx 或 ESP32 连上华为云，再下发命令。'
+        ? '药盒不在线。先启动设备（真板子或 node device-sim.js），再下发命令。'
         : code === 'IOTDA.014000'
         ? '设备不存在。检查 config.js 里的 DEVICE_ID 是否和控制台一致。'
         : err.message || '服务内部错误';

@@ -34,7 +34,8 @@
 │  ├─ huawei.js              华为云 API 客户端（含衍生签名实现）
 │  ├─ server.js              HTTP 服务，提供 4 个接口
 │  ├─ check.js               连通性自检
-│  └─ mqtt-key.js            MQTT 鉴权参数生成器
+│  ├─ mqtt-key.js            MQTT 鉴权参数生成器
+│  └─ device-sim.js          虚拟药盒（纯 Node 手写 MQTT 客户端，可顶替硬件）
 ├─ project.config.json       微信开发者工具项目配置
 ├─ start-server.bat          Windows 双击启动服务
 ├─ 使用说明.md                部署与操作步骤
@@ -83,6 +84,22 @@ node server.js
 微信开发者工具 → 导入项目 → 目录选本仓库根目录 → AppID 填 `wx7d45b3a8751dcbde`
 → 详情 → 本地设置 → 勾选「不校验合法域名」（服务走 http，不勾会被拦）。
 
+## 没有硬件时：虚拟设备
+
+`server/device-sim.js` 是一个用 Node 手写的 MQTT 客户端，扮演真实药盒的角色：自动连华为云、
+订阅命令主题、**收到命令 0.1 秒内自动回执**（真实固件也必须在这个量级回执，平台 20 秒就判超时）。
+
+```bash
+cd server
+node device-sim.js --report                        # 连上并上报一次属性
+node device-sim.js --report --dose --taken=1       # 再模拟一次"服药完成"
+```
+
+参数：`--report` 上报属性、`--dose` 发一次服药事件、`--plan=HH:MM` 指定计划时间点、`--taken=N` 今日已服次数。
+
+**注意**：华为云同一设备只允许一个 MQTT 连接。虚拟设备运行时，MQTT.fx 和控制台「在线调试」都会抢占失败，
+用之前先让对方断开。
+
 ## 接口
 
 | 方法 | 路径 | 说明 |
@@ -123,6 +140,16 @@ node server.js
 ```
 
 `event_seq` 自增，云端靠它去重；`event_status` 取 `ontime` / `early` / `late` / `missed`。
+
+**④ 标定基准重量**（命令 `tare`，可选）
+
+```json
+{"service_id": "PillBox", "command_name": "tare", "paras": {"base_g": 130.2}}
+```
+
+设备把 `base_g`（不填则现场称一次）存为「满盒基准」，之后靠这个基准判断少了多少。
+若固件采用「开机 + 每次关盖自动更新基准」（推荐做法），这条命令可以不实现，收到后回
+`{"result_code": 0}` 即可。详见 `对接文档-给A.md` 第 3 节。
 
 ## 两个实现要点
 

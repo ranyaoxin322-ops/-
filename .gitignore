@@ -13,14 +13,6 @@ server/data/
 # ---------- 微信开发者工具个人设置 ----------
 project.private.config.json
 
-# ---------- 模板遗留（本项目用不到） ----------
-cloudfunctions/
-uploadCloudFunction.sh
-miniprogram/images/
-miniprogram/components/
-miniprogram/pages/example/
-miniprogram/envList.js
-
 # ---------- 系统垃圾 ----------
 .DS_Store
 Thumbs.db

@@ -71,7 +71,7 @@ function explain(err) {
     const dev = await huawei.getDevice();
     ok(`设备查询成功，状态：${dev.status}`);
     if (dev.status !== 'ONLINE') {
-      console.log('         设备当前不在线。MQTT.fx 或 ESP32 连上之后才会变成 ONLINE。');
+      console.log('         设备当前不在线。真板子或 node device-sim.js 连上之后才会变成 ONLINE。');
     }
   } catch (err) {
     bad('设备查询失败');
@@ -85,7 +85,7 @@ function explain(err) {
     const keys = Object.keys(properties);
     ok(`属性读取成功，共 ${keys.length} 个字段`);
     if (keys.length === 0) {
-      console.log('         属性是空的 —— 说明设备还没上报过数据，先用 MQTT.fx 发一条。');
+      console.log('         属性是空的 —— 说明设备还没上报过数据，先跑 node device-sim.js --report。');
     } else {
       console.log('         最新上报时间：' + (eventTime || '未知'));
       keys.forEach((k) => console.log(`         ${k.padEnd(20)} = ${JSON.stringify(properties[k])}`));
